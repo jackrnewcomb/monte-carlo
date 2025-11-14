@@ -4,6 +4,17 @@
 #include <string>
 #include <vector>
 
+#include "random"
+
+double f1(double x)
+{
+    return x * x;
+}
+double f2(double x)
+{
+    return exp(-x * x);
+}
+
 bool sanitizeArgMap(const std::map<std::string, std::string> &map)
 {
 
@@ -68,6 +79,23 @@ int main(int argc, char *argv[])
         // There was an error sanitizing the map. Abort
         return -1;
     }
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    auto N = std::stoi(argMap["-N"]);
+
+    double sum = 0.0;
+    auto g = (argMap["-P"] == "1" ? f1 : f2);
+    for (long long i = 0; i < N; i++)
+    {
+        double x = dist(generator);
+        sum += g(x);
+    }
+
+    double estimate = sum / N; // interval length is 1
+
+    std::cout << "Estimate = " << estimate << std::endl;
 
     return 0;
 }
