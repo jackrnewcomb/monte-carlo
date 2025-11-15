@@ -1,10 +1,11 @@
 #include <map>
 
+#include "random"
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "random"
+#include "mpi.h"
 
 double f1(double x)
 {
@@ -33,12 +34,12 @@ bool sanitizeArgMap(const std::map<std::string, std::string> &map)
         {
             try
             {
-                auto test = std::stoi(pair.second);
+                auto test = std::stoll(pair.second);
             }
             // If it fails, print an error message and abort
             catch (...)
             {
-                std::cout << "Invalid input for " << pair.first << ": Value must cast to an int. Aborting!\n";
+                std::cout << "Invalid input for " << pair.first << ": Value must cast to a long. Aborting!\n";
                 return false;
             }
         }
@@ -48,6 +49,12 @@ bool sanitizeArgMap(const std::map<std::string, std::string> &map)
 
 int main(int argc, char *argv[])
 {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
     // maps arg types to their arg
     std::map<std::string, std::string> argMap = {{"-P", "1"}, {"-N", "10000000"}};
 
@@ -80,22 +87,37 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    std::default_random_engine generator;
+    int P = std::stoi(argMap["-P"]);
+    long long N = std::stoll(argMap["-N"]);
+
+    // Broadcast N and P so all ranks know them
+    MPI_Bcast(&P, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&N, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+
+    std::default_random_engine generator(rank + 12345);
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    auto N = std::stoi(argMap["-N"]);
-
-    double sum = 0.0;
+    double localSum = 0.0;
     auto g = (argMap["-P"] == "1" ? f1 : f2);
-    for (long long i = 0; i < N; i++)
+
+    long long local_N = N / size; // integer division
+    for (long long i = 0; i < local_N; i++)
     {
         double x = dist(generator);
-        sum += g(x);
+        localSum += g(x);
     }
 
-    double estimate = sum / N; // interval length is 1
+    double global_sum = 0.0;
+    MPI_Reduce(&localSum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    std::cout << "Estimate = " << estimate << std::endl;
+    if (rank == 0)
+    {
+        double estimate = global_sum / N;
+        std::cout << "Estimate = " << estimate << std::endl;
+        std::cout << "Bye!" << std::endl;
+    }
+
+    MPI_Finalize();
 
     return 0;
 }
